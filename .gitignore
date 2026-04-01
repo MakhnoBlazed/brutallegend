@@ -1,6 +1,9 @@
 # Claude Code local settings
 .claude/
 
+# Extracted game data (contains proprietary game files)
+brutal-legend-re/test_extract/
+
 # Python cache
 __pycache__/
 *.pyc
