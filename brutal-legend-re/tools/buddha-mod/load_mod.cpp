@@ -12,8 +12,48 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char* DEFAULT_GAME_PATH =
-    "C:\\Users\\kevin\\OneDrive\\Desktop\\steam\\steamapps\\common\\BrutalLegend\\BrutalLegend.exe";
+// Resolved at runtime from registry — no hardcoded paths
+static char g_defaultGamePath[MAX_PATH] = {0};
+
+static void resolve_default_game_path(void)
+{
+    // Try Steam registry first
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\WOW6432Node\\Valve\\Steam",
+        0, KEY_READ, &hKey) == ERROR_SUCCESS)
+    {
+        char steamPath[MAX_PATH];
+        DWORD len = sizeof(steamPath);
+        if (RegQueryValueExA(hKey, "InstallPath", NULL, NULL, (LPBYTE)steamPath, &len) == ERROR_SUCCESS)
+        {
+            strcat_s(steamPath, MAX_PATH, "\\steamapps\\common\\BrutalLegend\\BrutalLegend.exe");
+            if (GetFileAttributesA(steamPath) != INVALID_FILE_ATTRIBUTES)
+            {
+                strcpy_s(g_defaultGamePath, MAX_PATH, steamPath);
+                RegCloseKey(hKey);
+                return;
+            }
+        }
+        RegCloseKey(hKey);
+    }
+
+    // Try common paths
+    const char* commonPaths[] = {
+        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\BrutalLegend\\BrutalLegend.exe",
+        "C:\\Program Files\\Steam\\steamapps\\common\\BrutalLegend\\BrutalLegend.exe",
+        "D:\\Steam\\steamapps\\common\\BrutalLegend\\BrutalLegend.exe"
+    };
+
+    for (int i = 0; i < 3; i++)
+    {
+        if (GetFileAttributesA(commonPaths[i]) != INVALID_FILE_ATTRIBUTES)
+        {
+            strcpy_s(g_defaultGamePath, MAX_PATH, commonPaths[i]);
+            return;
+        }
+    }
+}
 
 static const char* MOD_DLL_NAME = "buddha_mod.dll";
 
@@ -123,7 +163,17 @@ int main(int argc, char* argv[])
 {
     printf("=== Buddha Mod Loader Injector v0.1.0 ===\n\n");
 
-    const char* gamePath = (argc > 1) ? argv[1] : DEFAULT_GAME_PATH;
+    resolve_default_game_path();
+
+    if (g_defaultGamePath[0] == '\0')
+    {
+        fprintf(stderr, "[load_mod] Could not find BrutalLegend.exe.\n");
+        fprintf(stderr, "Install Steam and Brutal Legend, or provide path as argument:\n");
+        fprintf(stderr, "  load_mod.exe \"<path>\\BrutalLegend.exe\"\n");
+        return 1;
+    }
+
+    const char* gamePath = (argc > 1) ? argv[1] : g_defaultGamePath;
 
     // Resolve the DLL path: <exe_dir>\buddha_mod.dll
     char dllPath[MAX_PATH];

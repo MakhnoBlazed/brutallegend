@@ -21,31 +21,50 @@ A minimal DLL injection mod loader for Brutal Legend. Hooks the game's file I/O 
 
 ## Building
 
-### With g++ (MinGW-w64)
+### Automatic (recommended)
 
-```bash
-# Build the DLL
-g++ -shared -O2 -Wall -Idummy buddha_mod.cpp -o buddha_mod.dll
+Double-click `build.bat`. It auto-detects g++ or MSVC and builds both files.
 
-# Build the injector
-g++ -O2 -Wall load_mod.cpp -o load_mod.exe
+```
+build.bat          # auto-detect compiler
+build.bat g++      # force MinGW
+build.bat msvc     # force MSVC
 ```
 
-### With Visual Studio Developer Command Prompt
+Output goes to `bin/buddha_mod.dll` and `bin/load_mod.exe`.
+
+### Manual Build
+
+**With g++ (MinGW-w64):**
 
 ```bat
 :: Build the DLL
-cl /LD /EHsc buddha_mod.cpp /out:buddha_mod.dll
+g++ -shared -O2 -Wall buddha_mod.cpp -o buddha_mod.dll -nostdlib -lkernel32 -luser32
 
 :: Build the injector
-cl /EHsc load_mod.cpp /out:load_mod.exe
+g++ -O2 -Wall load_mod.cpp -o load_mod.exe -lkernel32 -luser32
 ```
+
+**With Visual Studio Developer Command Prompt:**
+
+```bat
+:: Build the DLL
+cl /LD /EHsc /O2 /W3 buddha_mod.cpp /Fe:buddha_mod.dll kernel32.lib user32.lib
+
+:: Build the injector
+cl /EHsc /O2 /W3 load_mod.cpp /Fe:load_mod.exe kernel32.lib user32.lib
+```
+
+### Requirements
+
+- **32-bit build** — the game is x86. Your compiler must produce 32-bit binaries.
+- For MinGW: use `i686` or `i686-w64-mingw32` variant.
+- For MSVC: use the x86 Developer Command Prompt (not x64).
 
 ### Notes
 
-- The DLL must be built as a **32-bit** binary to match the game's x86 executable.
-- `-nostdlib` is optional but recommended for a clean DLL.
-- If using MSVC, the DLL will require the CRT; for a truly standalone DLL use `-Zl` and define `DllMain` manually.
+- No Steam SDK or game libraries needed — only Win32 API.
+- The hook approach (CreateFileA/W IAT) was confirmed from import analysis of `BrutalLegend.exe` — no Steam documentation used.
 
 ## Installation
 
@@ -152,6 +171,7 @@ See `docs/MOD_LOADER_ARCHITECTURE.md` for the full engine analysis and `docs/eng
 buddha-mod/
 ├── buddha_mod.cpp   <- the DLL hook (IAT hook on CreateFileA/W)
 ├── load_mod.cpp     <- the injector (CreateRemoteThread + LoadLibrary)
+├── build.bat        <- build script (auto-detects g++ or MSVC)
 └── README.md         <- this file
 ```
 
