@@ -18,6 +18,7 @@ Buddha is Double Fine's custom in-house game engine used across multiple titles 
 |-----------|---------|----------|
 | **FMOD** | Audio system | FSB audio banks, confirmed from DoubleFine Explorer |
 | **Havok Physics** | Physics simulation | Standard middleware for 2009 era |
+| **Havok Animations** | Animation System | BL uses a Custom Wrapper |
 | **Scaleform GFx** | UI system | Common in EA published games |
 | **Bink Video** | Cutscenes | Standard video codec |
 | **ZLib** | Compression | Confirmed in DFPF format |
@@ -94,6 +95,7 @@ BrutalLegend.exe
 | Faction swaps | ✅ Yes |
 | Texture replacement | ✅ Yes |
 | Audio replacement | ✅ Yes |
+| New Animations | 🔴 No (format and repacking to game not parsed) |
 | New missions | 🔴 No (undocumented) |
 | New maps | 🔴 No (undocumented) |
 | New characters | 🔴 No (prototype limit) |
