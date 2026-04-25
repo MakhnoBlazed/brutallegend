@@ -15,10 +15,12 @@ Animation and skeleton data in Brutal Legend is stored within DFPF V5 containers
 
 | Type | Ver | Description |
 |------|-----|-------------|
-| ComboAnim | 0 | Combo attack animations |
-| ComboPose | 1 | Combat pose data |
-| Stance | 3 | Idle/stance poses |
-| AnimMap | 1 | Animation mapping/listing |
+| .ComboAnim | 0 | Combo attack animations |
+| .ComboPose | 1 | Combat pose data |
+| .Stance | 3 | Idle/stance poses |
+| .AnimMap | 1 | Animation mapping/listing |
+| .AnimResource | Animation Data |
+| .AnimResource.header | Animation data header |
 
 ## Animation System
 
@@ -76,12 +78,14 @@ Typical animation data sizes (from manifest):
 | ComboAnim | 0-1 KB | 0-1 KB |
 | Stance | 1-3 KB | 1-3 KB |
 | ComboPose | 0-6 KB | 4-6 KB |
+| AnimResource | 0-16 KB (note this is me just guessing)  | 
 
 ## Skeleton/Rig Format
 
 ### Rig Assets
 
-Skeleton data is stored as MeshSet assets in the ig/ subfolder:
+Skeleton data is stored as MeshSet assets in the 
+ig/ subfolder:
 
 `
 characters/bipeds/a01_avatar/rig/
