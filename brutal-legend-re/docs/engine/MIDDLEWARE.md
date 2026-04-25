@@ -17,7 +17,7 @@
 - Used in DFPF containers and UI .gfx files
 
 ### Scaleform GFx (CONFIRMED)
-- UI middleware: Scaleform GFx 3.x
+- UI middleware: Scaleform GFx 3.x\ 2.1.57?
 - Binary header analysis: 47 46 58 08 (GFX signature, version 3.x)
 - ZLib compressed .gfx files
 - See [UI_FORMAT.md](../formats/UI_FORMAT.md)
