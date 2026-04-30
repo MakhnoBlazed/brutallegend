@@ -142,6 +142,7 @@ The following functions were identified via Ghidra analysis of `BrutalLegend.exe
 | `0x004baaa0` | `ComponentManager::RemoveComponent` | **System** | Generic manager for removing components from an actor. |
 | `0x0041aab0` | `MemoryAllocator` | **System** | Allocates (`0x0041aab0`) and Deallocates (`0x0041af50`) heap memory for skeletons. |
 | `0x004426f0` | `ThreadSync` | **System** | Enters (`0x004426f0`) and Exits (`0x00442610`) critical sections to prevent race conditions. |
+| `0x0043bba0` | `Havok::BlockAllocator::Alloc` | **Memory Mgmt** | Manages 64-byte block allocations for animation decompression buffers. |
 
 ### 2. The "Captain" Layer (Update Loop)
 *The code that executes every frame to advance bone positions.*
@@ -165,6 +166,7 @@ The following functions were identified via Ghidra analysis of `BrutalLegend.exe
 | `0x00dd51b0` | `Havok::DecompressWaveletChunk` | **Wavelet Decoder** | Handles `hkaWaveletCompressedAnimation`. Uses wavelet transforms for higher compression. |
 | `0x00dd5030` | `Havok::WaveletMathCore` | **Wavelet Core** | Core mathematical operations for wavelet reconstruction. |
 | `0x00433130` | `Math::NormalizeQuaternions` | **Math Helper** | SIMD-optimized function that normalizes a batch of quaternions. |
+| `0x0040ea40` | `AnimCompressionParams::Register` | **System Init** | Registers compression settings (bit-depths, tolerances) used by Havok decoders. |
 
 ### 4. Rendering Layer (Vertex Skinning)
 *Applies bone movements to the 3D model mesh.*
@@ -192,11 +194,27 @@ The following functions were identified via Ghidra analysis of `BrutalLegend.exe
 
 ## Data Structures & Memory Maps
 
-### The Track Map (`transformTrackToBoneIndices`)
-Extracted from live memory at address `0x2141C29C`. This array maps Animation Tracks to Skeleton Bone Indices. It is critical for correctly applying animation data to the rig.
+### The AnimResource File Format
+Brutal Legend uses a custom Double Fine wrapper (`AnimResource`) around standard Havok data. 
+
+#### Header Structure (Offsets `0x00` - `0x40`)  (may not be correct) 
+| Offset | Size | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `0x00` | 4 | ASCII | Magic Bytes: `"dnap"` |
+| `0x04` | 4 | Float | Version/Scale Factor |
+| `0x08` | 4 | Float | Duration (Seconds) |
+| `0x0C` | 2 | UInt16 | Bone Count |
+| `0x0E` | 2 | UInt16 | Track Count |
+| `0x10` | 2 | UInt16 | Rotation Track Count |
+| `0x12` | 2 | UInt16 | Translation Track Count |
+| `0x14` | 2 | UInt16 | Compression Type (`1`=Uncompressed, `2`=Delta, `3`=Wavelet) |
+| `0x18` | 4 | UInt32 | Data Offset (Start of compressed bone data) |
+
+#### Track Map (`transformTrackToBoneIndices`)
+Located immediately after the header (typically offset `0x40`). This array maps Animation Tracks to Skeleton Bone Indices.
 
 **Array Content (UInt16 Little-Endian):**
-`1, 3, 3, 5, 7, 8, 9, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38...`
+`1, 3, 3, 5, 7, 8, 9, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20...`
 
 *Note: Track 0 maps to Bone 1 (Pelvis), Track 1 to Bone 3 (Spine1), etc.*
 
@@ -212,22 +230,22 @@ Brutal Legend uses a sophisticated resource manager (`AnimResourceRsMgr`) to han
 Confirmed via RTTI strings in the executable:
 
 #### Havok Core Classes
-    *   `hkaAnimation` (Base)
-    *   `hkaDeltaCompressedAnimation` (Most Common)
-    *   `hkaWaveletCompressedAnimation` (High Compression)
-    *   `hkaSplineCompressedAnimation` (Spline-based)
-    *   `hkaInterleavedUncompressedAnimation` (Raw Data)
-    *   `hkaAnimationBinding` (Links Anim to Skeleton)
-    *   `hkaAnimationContainer` (Holds multiple anims)
+*   `hkaAnimation` (Base)
+*   `hkaDeltaCompressedAnimation` (Most Common)
+*   `hkaWaveletCompressedAnimation` (High Compression)
+*   `hkaSplineCompressedAnimation` (Spline-based)
+*   `hkaInterleavedUncompressedAnimation` (Raw Data)
+*   `hkaAnimationBinding` (Links Anim to Skeleton)
+*   `hkaAnimationContainer` (Holds multiple anims)
 
 #### Double Fine Wrapper Classes
-    *   `SkeletalAnimation` (Base Wrapper)
-    *   `CompressedSkeletalAnimation`
-    *   `UncompressedSkeletalAnimation`
-    *   `PoseAnimation` (Static Poses)
-    *   `CoLocomotionAnimation` (Movement Blending)
-    *   `CoLocomotionSimpleAnimation` (Simplified Locomotion)
-    *   `CoConstructable::Construction_Animation` (Building Anims)
+*   `SkeletalAnimation` (Base Wrapper)
+*   `CompressedSkeletalAnimation`
+*   `UncompressedSkeletalAnimation`
+*   `PoseAnimation` (Static Poses)
+*   `CoLocomotionAnimation` (Movement Blending)
+*   `CoLocomotionSimpleAnimation` (Simplified Locomotion)
+*   `CoConstructable::Construction_Animation` (Building Anims)
 
 #### Attribute & Priority System
 *   `ReferenceAttribute<enum_AnimationPriority>`: Manages blending priorities (Face > Body > Root).
@@ -243,22 +261,37 @@ Defined in RTTI at `0x00eb0a98`. Controls blending and looping behavior.
 | `2` | `ANIMATION_AlphaRamp` | Fades in/out via alpha blending (Effects/UI). |
 | `3` | `ANIMATION_LoopingNoBlend` | Hard-cut looping (no blending with other layers). |
 
+### Animation Events
+Embedded triggers for gameplay effects, identified by these strings:
+*   `AnimEvent_PlaySound`: Triggers audio cues.
+*   `AnimEvent_Footstep`: Syncs footfalls with terrain.
+*   `AnimEvent_SpawnParticles`: Visual effects (sparks, dust).
+*   `AnimEvent_GoRagdoll`: Transitions to physics simulation.
+*   `AnimEvent_HideAttachment`: Hides weapons/items during specific poses.
+
 ---
 
 ## Challenges & Solutions
 
 ### The "Twisting" Issue
-Initial attempts to play animations resulted in twisted meshes.
-*   **Cause:** Mismatch between the game's **Bind Pose** and the importer's default pose, combined with treating **Delta-Compressed Integers** as Absolute Quaternions.
-*   **Solution:** Implement Delta Accumulation (summing integers over time) and applying the result relative to the Bind Pose. Additionally, Track 0 is often Root Motion (Translation) and should be skipped for skeletal rotation.
+Initial attempts to play animations in blender resulted in twisted meshes.
+*   **Possible Cause:** Mismatch between the game's **Bind Pose** and the importer's default pose, combined with treating **Delta-Compressed Integers** as Absolute Quaternions.
+*   **Possible Solution:** 
+    1. Parse the **Bind Pose Matrix** from the `.rig` file for each bone.
+    2. Implement **Delta Accumulation** (summing integers over time) to get the local animated quaternion.
+    3. Multiply the **Bind Pose Quaternion** by the **Animated Local Quaternion** to get the final world rotation.
+    4. Skip **Track 0** if it contains Root Motion (Translation) instead of rotation.
 
 ### Key Breakthroughs
-1.  Identified the `transformTrackToBoneIndices` array in memory.
-2.  Distinguished between `StRecomposeD` (Delta) and `StRecomposeW` (Wavelet) compression.
+1.  Identified the `transformTrackToBoneIndices` array in memory and the file header.
+2.  Distinguished between `StRecomposeD` (Delta) and `StRecomposeW` (Wavelet) compression via header flags.
 3.  Located the `AnimationJob::Execute` function that drives the update loop.
 4.  Mapped the full `CoSkeleton` lifecycle from creation to job submission.
 5.  Identified the thread synchronization primitives (`Lock`/`Unlock`) ensuring safe multi-threaded access.
 6.  Discovered the `AnimResourceRsMgr` and hash-table lookup systems for resource management.
+7.  Decoded the Double Fine `AnimResource` header structure to correctly(maybe) locate data offsets.
+
+---
 
 
 ## References
