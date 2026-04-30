@@ -119,6 +119,41 @@ Animations are extracted along with other DFPF assets using:
 2. Custom DFPF V5 parser
 3. Bit-field decoding per DFPF_ANALYSIS.md
 
+## Associated Functions
+
+1. The "Game Logic" Layer (Brutal Legend Custom Code)
+These functions are part of the CoSkeleton class, which is Brutal Legend's wrapper around the Havok engine.
+
+|Function Address|	|Descriptive Name|	|Role|
+|FUN_00a89af0|	CoSkeleton::Constructor	Initializes a new skeleton instance. Sets up default values and assigns the VFTABLE.|
+|FUN_00a89bf0|	CoSkeleton::Destructor	Cleans up memory and releases references when a character is removed from the game.|
+|FUN_00a89f50|	CoSkeleton::InitializeState	Allocates memory for the animation state (pose buffer) and links it to the hkaAnimatedSkeleton. Called when an animation starts.|
+|FUN_00a8a530|	CoSkeleton::SyncState	Checks if the animation state has changed (e.g., switching from "Walk" to "Run") and updates internal caches.|
+|FUN_00a8a580|	CoSkeleton::CleanupState	Frees the pose buffer and resets pointers when an animation stops.|
+|FUN_00a8b230|	CoSkeleton::CreateUpdateJob	The "Job Factory." It creates a TaskInstance and assigns the function pointers (FUN_00a8b770) that will run on a worker thread.|
+|FUN_006b40a0|	CoSkeleton::SubmitSkinningJob	Submits the final "Skinning" job to the multi-threaded system to move the 3D mesh vertices.|
+
+2. The "Captain" Layer (The Update Loop)
+This is the code that actually runs every frame to move the bones.
+
+Function Address	Descriptive Name	Role
+FUN_00a8b770	AnimationJob::Execute	The Captain. The main loop that iterates through all bones/tracks. It calls the time-advance and sampling functions.
+FUN_00a8bdd0	Track::AdvanceTime	Called by the Captain. It updates the internal "clock" for specific animation tracks using the delta time.
+FUN_00a8c110	Track::SamplePose	Called by the Captain. It asks the Havok engine for the new bone positions at the current time and returns a "dirty" mask.
+3. The "Havok Engine" Layer (Internal Math)
+These functions are inside the Havok library (00dc... and 00dd... range). They handle the complex compression math.
+
+Function Address	Descriptive Name	Role
+FUN_00dccfb0	hkaDeltaCompressedAnimation::samplePartialPose	The Sampler. The main Havok function that calculates the final bone transforms for a specific moment in time.
+FUN_00dd7b00	Havok::DecodeBoneTransform	The Decoder. Takes compressed data (quaternions/floats) and decodes it into usable bone rotation/position data.
+FUN_00dcca40	Havok::DecompressDeltaChunk	The Engine. The heavy-lifting math function that performs the actual delta-decompression and interpolation between keyframes.
+4. The "Rendering" Layer (Vertex Skinning)
+This is the final step where the bone movements are applied to the 3D model.
+
+Function Address	Descriptive Name	Role
+FUN_00436c70	Skinning::ApplyMatrices	The Skin. Takes the final bone matrices and multiplies them by the vertex weights to move the character's mesh.
+FUN_00433130	Skinning::BlendVertices	A helper function used during skinning to blend between different bone influences on a single vertex.
+
 ## References
 
 - DFPF_ANALYSIS.md - Container format details
