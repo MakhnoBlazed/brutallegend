@@ -3,7 +3,7 @@
 **Status:** In Progress
 **Game:** Brutal Legend
 **Engine:** Buddha (Double Fine)
-**Updated:** 04-25-26
+**Updated:** 04-30-26
 
 ---
 
