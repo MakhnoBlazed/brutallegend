@@ -209,29 +209,6 @@ The following functions were identified via Ghidra analysis of `BrutalLegend.exe
 | `0x00fbf9c8` | `.?AVBlendNode_FootIK@@` | **RTTI Class** | The C++ class responsible for executing the Foot IK blend. |
 | `0x00ef8830` | `kAP_FootIK` | **State Tag** | Animation state/action point tag for Foot IK activation. |
 
-#### B. Kamikaze Units (`CoKamikazeMount`)
-*Logic for self-destructing units, including AI/Player control states and visual effects.*
-
-| Address/String | Identifier | Role | Description |
-| :--- | :--- | :--- | :--- |
-| `0x00eebe78` | `CoKamikazeMount` | **Base Class** | Main component for kamikaze behavior. |
-| `0x00eebe9c` | `AutoPilotKamikaze` | **State** | AI-controlled autonomous kamikaze mode. |
-| `0x00eebec0` | `AIDrivingKamikaze` | **State** | AI-driven vehicle/unit control. |
-| `0x00eebee8` | `PlayerDrivingKamikaze` | **State** | Player-controlled kamikaze mode. |
-| `0x00eebf50` | `KamikazeSelfDestructProto` | **Logic** | Defines damage and destruction parameters. |
-| `0x00eebfd4` | `KamikazeEffect` | **VFX** | Visual effect played during kamikaze mode. |
-| `0x00fb8bc8` | `.?AVCoKamikazeMount@@` | **RTTI Class** | C++ class identifier for the Kamikaze mount. |
-
-#### C. Trike Units (RTS/Strategy Elements)
-*Event triggers and UI strings related to "Trike" squadrons.*
-
-| String ID | Identifier | Context |
-| :--- | :--- | :--- |
-| `kULE_A10_TrikeSquadBuilt` | **Event** | Triggered when a Trike squad is constructed. |
-| `kULE_A10_TrikeAttacked` | **Event** | Triggered when a Trike squad takes damage. |
-| `kULE_A10_TrikeUnitBaseUpgrade` | **Event** | Triggered upon base upgrades affecting Trikes. |
-| `kULE_VikingPaintUpgrade` | **Event** | Cosmetic upgrade event for Viking units. |
-
 ---
 
 ## Data Structures & Memory Maps
