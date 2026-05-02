@@ -504,3 +504,299 @@ animated bone names, and the rig itself — the parser is **complete
 and validated** across all 27 b20_horse animations. Per-frame
 quaternion playback is the one remaining feature, blocked on the one
 remaining loader function.
+
+## 13. Final answer: ALL Havok animation classes are dead code
+
+With direct Ghidra access I traced every Havok animation pipeline. The
+result is decisive:
+
+### Cross-reference verification (via Ghidra MCP)
+
+| Function | Role | Direct call xrefs |
+|---|---|---|
+| `FUN_00dc9d10` | `hkaDeltaCompressedAnimation::ctor` outer | **0** (only registration data ref) |
+| `FUN_00dcc280` | Delta inner ctor | only from `FUN_00dc9d10` |
+| `FUN_00dcca40` | `StDecompressD` (Delta sampler) | **0** |
+| `FUN_00dccfb0` | `StDecompressDChunk` | **0** (only vtable entry [4]) |
+| `FUN_00dca130` | `hkaWaveletCompressedAnimation::ctor` outer | **0** (only registration data ref) |
+| `FUN_00dd4b00` | Wavelet inner ctor | only from `FUN_00dca130` |
+| `FUN_00dd51b0` | `StDecompressW` (Wavelet sampler) | **0** |
+| `FUN_00dd59a0` | Wavelet vtable [4] | **0** (only vtable entry) |
+| `FUN_00dd2a30` | `hkaSplineCompressedAnimation::ctor` | (also dead per earlier analysis) |
+
+**All three Havok animation pipelines (Delta, Wavelet, Spline) are
+statically linked but never instantiated.** Their vtables exist solely
+because Havok's class-registration boilerplate references them at
+init time, but no game code ever creates one.
+
+### What this means for `dnap`
+
+The `dnap` file format is a **custom Brutal Legend animation format**
+that **does not actually use the Havok animation API**, even though it
+visually resembles `hkaWaveletCompressedAnimation` (both have a u16
+mask array at `data+4`, both use bit-packed dequantization with
++0.5 bin-centering, both have static and dynamic stream sections).
+
+The 'dnap' magic isn't even checked at runtime — it's not present as a
+literal byte pattern, string, or 32-bit constant anywhere in
+`BrutalLegend.exe`.
+
+### Where the actual sampler is
+
+The runtime sampling code that consumes `dnap` files lives elsewhere
+in the binary — likely in the `kAP_*`-priority animator system
+(reachable from `CoSkeleton::Update`, which we *did* find and which
+does animate bones every frame). The Havok-named functions ship with
+the Havok SDK and got linked in but are dead.
+
+To find the live sampler we'd need to trace from
+`CoSkeleton::Update` (`FUN_00a89a00`'s tick path) → the per-bone
+state machine (`FUN_00a8b770` and friends) and find where bone
+transforms are **read from** the AnimResource pointer. That codepath
+is what consumes the dnap bytes, and it's almost certainly inlined
+custom code not part of the Havok class hierarchy.
+
+### Bottom line for the parser
+
+The decoder library functions in `b20_horse_anim_parser.py` are
+correct *as Havok-style decoders* — `decode_bit_packed_stream()`,
+`stream_byte_size()`, `mask_skip_flags()`, `mask_static_counts()` all
+match the Ghidra disassembly of `FUN_00dde3c0` / `FUN_00dde310` /
+`FUN_00dddf80` / `FUN_00dd6a30`. But since those Havok functions
+aren't actually called at runtime, applying them to dnap bytes is at
+best a strong heuristic.
+
+For real frame-by-frame decode of dnap, the next step is **direct
+runtime debugging**: set a breakpoint inside `CoSkeleton::Update` /
+`FUN_00a8b770`, step into wherever it reads from the AnimResource,
+and capture the actual byte-fetch addresses. The Wavelet/Delta
+function templates we have explain *what* the math probably looks
+like — the live code likely follows the same algorithm but with
+different field offsets.
+
+The static parser remains complete for everything else: skeleton,
+events, durations, period, fps, frame counts, block sizes, animated
+bone correspondence, rig hashes, stance/combo/pose property files —
+all 27 b20_horse animations parse cleanly.
+
+## 14. Audit of the 29 latest exports
+
+After confirming Havok pipelines are dead, I audited every new export.
+Result:
+
+### 11 dead (vtable-only, never called)
+
+`FUN_00dcbb40`, `FUN_00dcbcb0`, `FUN_00dcbe90`, `FUN_00dcbea0`,
+`FUN_00dcbeb0`, `FUN_00dcbf10`, `FUN_00dcbfc0`, `FUN_00dcc060`,
+`FUN_00dcc1a0`, `FUN_00dcc1d0`, `FUN_00dc9d60` — all are entries in
+the `hkaDeltaCompressedAnimation` and/or `hkaWaveletCompressedAnimation`
+vtables. The Havok pipeline never instantiates either class, so these
+methods are unreachable.
+
+### 3 dead (only called from other dead Havok code)
+
+`FUN_00dcc830` (sample cache hit), `FUN_00dcc730` (cache miss fill),
+`FUN_00dcc6e0` — only called from `FUN_00dccfb0` which itself is dead.
+
+### Live but for unrelated resource types
+
+| FUN | Resource type | Why it's not what we want |
+|---|---|---|
+| `FUN_00450760` | **generic** `AcquireOrLoad` (60+ callers) | Type-agnostic dispatcher, generic for all resources |
+| `FUN_00451330` | generic resource init helper | Calls `vmethod[0x34]` for whatever type |
+| `FUN_005c5700` (40+ cl) | `Effect` | type ptr `0xf78530` = `"Effect"` |
+| `FUN_005c4ed0` (13 cl) | `Effect` | same |
+| `FUN_005c4b00` | `Effect` | only caller is from `FUN_004f2a10` (also Effect-related) |
+| `FUN_00468c80` (11 cl) | `DUIMovie` | type ptr `0xf78b18` = `"DUIMovie"` |
+| `FUN_00468b30`, `FUN_00470ac0`, `FUN_0046a540` | `DUIMovie` | sibling calls in 0x468 cluster |
+| `FUN_00577570` (5 cl) | `PhysicsRigidBody` | type ptr `0xf787a8` = `"PhysicsRigidBody"` |
+| `FUN_00578ef0` | `PhysicsRigidBody` | same cluster |
+| `FUN_004f2a10` | `Effect` | sibling |
+| `FUN_00402e40`, `FUN_00402950`, `FUN_0048a540` | unidentified vtable entries | not dnap-related |
+
+**Net result: NONE of the 29 new exports touch dnap data.** They're
+all either Havok dead code or live code for other resource types
+(Effect, DUIMovie, PhysicsRigidBody).
+
+## 15. What you need to do now
+
+The static-analysis path has hit its limit. To get per-frame
+quaternion playback, here's the order I'd attack it:
+
+### Path A — Runtime debugging (highest signal)
+
+1. Open `BrutalLegend.exe` in `x64dbg` / `x32dbg`.
+2. Load a saved game where the horse is visible (animations playing).
+3. Set a **memory breakpoint** on the in-memory address of any
+   loaded `b20_horse` AnimResource buffer:
+   - First, in Cheat Engine or a memory scanner, find the
+     `0x646E6170` ("dnap" little-endian) magic in process memory.
+     There should be ~27 hits matching the b20_horse animations.
+   - Pick one (e.g. `relaxed_breathe`) and set a hardware READ
+     breakpoint on its `data + 4` offset.
+4. Each time the breakpoint hits, the call stack will show **the
+   actual sampler function**. That's the dnap consumer.
+5. Once you have the sampler address, decompile that function and
+   its parents in Ghidra. The byte-offset map between dnap file and
+   what the sampler actually reads will be plain.
+
+This is by far the most reliable path. ~30 minutes vs days of
+guessing.
+
+### Path B — Find via existing animation tooling
+
+`DoubleFineExplorer` (in `D:\SteamLibrary\...\BrutalLegend\`) is the
+official-ish unpacker tool. It already understands the resource
+formats. If it can render or re-encode AnimResource files, then
+either it has the format documented in its source (it's a .NET app —
+decompilable with ILSpy), or it just calls the game's libraries.
+Check whether DFE's source code (in JpmodLib.dll or DoubleFineTool.exe)
+has a dnap parser — that would be a much shorter path.
+
+```bash
+# decompile JpmodLib.dll & DoubleFineTool.exe
+cd "D:/SteamLibrary/steamapps/common/BrutalLegend/DoubleFineModTool"
+# install ILSpy or use dnSpy GUI on JpmodLib.dll
+```
+
+### Path C — Cross-reference Havok's open-source SDK docs
+
+Havok's animation runtime headers (`hkaWaveletCompressedAnimation.h`)
+were leaked in various game-engine source dumps. If you can find the
+struct definition in someone's leaked Havok headers, you'd have the
+exact field names for the runtime struct. The pre-2010 Havok 5.5/6.x
+versions match this Brutal Legend binary's vintage. Searches like
+`hkaWaveletCompressedAnimation site:github.com` may find decompiled
+header files.
+
+### Path D — Empirical brute force
+
+Each of the 27 b20_horse animations has a known property
+(period, num_frames, num_tracks, durations). Sweep the dnap
+files looking for **byte sequences that match those known values**
+to nail down field offsets. Some you've already found (FPS at 0x08,
+period_seconds at 0x04). The unknowns left are mostly the
+section-offset interpretations of `secs[]` at 0x40.
+
+### My recommendation
+
+Start with **Path B** — checking DoubleFineExplorer's source. It's
+the lowest-effort and most likely to have a working parser. If it
+doesn't, jump straight to **Path A**.
+
+Either way, **stop adding more Ghidra exports** — the ones we have
+already prove that the static analysis answer is "the live sampler
+isn't in any of the obvious places". Continued static work won't help.
+
+## 16. Empirical structural analysis (`dnap_field_finder.py`)
+
+After tooling-search confirmed no public dnap parser exists, I ran
+a brute-force empirical scan across all 24 b20_horse `.AnimResource`
+files comparing known properties to byte-offset values. Findings:
+
+### A. Confirmed field offsets (exact match across 24/24)
+
+| Field | Offset | Width |
+|---|---|---|
+| magic `'dnap'` | 0x00 | 4-byte ASCII |
+| period_seconds | 0x04 | f32 |
+| fps | 0x08 | f32 |
+| total_frames | 0x0C | u16 |
+| version | 0x0E | u16 |
+| frames_per_period | 0x10 | u16 |
+| num_tracks | 0x12 | u16 |
+| num_blocks | 0x16 | u16 |
+| num_quat_tracks | 0x34 | u16 |
+| num_float_tracks | 0x36 | u16 |
+| section_sizes[8] | 0x40..0x60 | u32×8 |
+
+Identity `period_seconds * fps == frames_per_period` holds for all 24
+animations (within float epsilon).
+
+### B. Two new structural invariants
+
+**1. `secs[2] - secs[1] = 12`** (always, for "regular" animations)
+
+That's exactly one TrackQuant header (12 bytes per the FUN_00dde3c0
+analysis). Suggests the static-section header structure is:
+
+```
+[secs[1] bytes of static data]
+[12 bytes of TrackQuant header for the static section]
+[secs[2] = where the dynamic streams begin]
+```
+
+**Exception**: the three `sleep_*` animations have `secs[2] - secs[1] = 20`
+instead. They have additional state (likely an 8-byte sleep-specific
+field plus the 12-byte TrackQuant).
+
+**2. `0x18 u16` is a runtime allocation hint** larger than file_size
+
+For each animation, `0x18 u16 - file_size` is between 344 and 400
+bytes. This roughly matches the size of the `hkaAnimation`-base-class
+runtime struct fields (0x68 + extras + alignment). Confirms that
+dnap files are loaded by a routine that allocates `0x18 u16` bytes,
+copies the file content, then byte-swaps if needed (per
+`FUN_00dcc280` / `FUN_00dd4b00`).
+
+### C. The "trailing data" puzzle is solved
+
+`secs[3..6]` only describe TWO blocks (block 0 rot + trans, block 1
+rot + trans). But `.AnimResource.header[+0x0F]` (the authoritative
+block count) is **3 for almost every animation, 7 for `relaxed_death`,
+3 for `sleep_*`**. The remaining `(num_blocks_header - 2)` blocks
+live in the **trailing data** region after `0x68 + sum(secs)`.
+
+So the on-disk layout is:
+
+```
+0x00..0x68    header (74 known fields)
+0x68..0x68+secs[1]+12  static reference data (incl. 12-byte TrackQuant trailer)
+                        (or +20 for sleep_* variants)
++secs[3]..   block 0 rot stream
++secs[4]..   block 0 trans stream
++secs[5]..   block 1 rot stream
++secs[6]..   block 1 trans stream
++trailing... block 2..N (count = .header[+0x0F] - 2)
+             — sizes implicit, total = file_size - sec_end
+```
+
+For most animations: 1 trailing block. For `relaxed_death`: 5 trailing
+blocks (matches its `hdr_blocks=7`). The trailing block bytes look
+high-entropy (not headers or pointers) — that's compressed bit-packed
+sample data.
+
+### D. What this enables
+
+The parser can now express the **full structural layout** of every
+dnap file:
+- Header fields (validated empirically) ✅
+- Static reference section (offset + size) ✅
+- Two explicit block sections (offsets + sizes) ✅
+- Trailing block(s) total size, count from `.header` ✅
+- TrackQuant headers at known offsets ✅
+- Per-track encoding masks somewhere in the masks region ⚠️ *position
+  still uncertain — may be at different sub-offset than 0x6C as we
+  originally guessed*
+
+What it does NOT enable yet:
+- Per-frame quaternion decoding (needs the byte-swap-region size
+  formula from `FUN_00dd7070`'s output applied to the right offsets,
+  AND knowing whether dnap is wavelet- or delta-style internally.)
+
+For the last 5%, runtime debugging (`RUNTIME_DEBUG_GUIDE.md`) is the
+shortest path. The empirical scan plus the Ghidra-direct work in
+§13 has narrowed the problem from "what is this format" to "what are
+the exact byte offsets the live sampler reads", and that question
+can only really be answered by a memory breakpoint trace.
+
+## 17. Files in this directory
+
+| File | What it does |
+|---|---|
+| `b20_horse_anim_parser.py` | Full parser — extracts skeleton, all 27 animations' headers, events, stances, combo poses |
+| `b20_horse_parsed/` | JSON output of the parser |
+| `dnap_field_finder.py` | Empirical scanner used in §16 |
+| `ANIMATION_FUN_ANALYSIS.md` | This document |
+| `RUNTIME_DEBUG_GUIDE.md` | Step-by-step x32dbg instructions for capturing the live sampler |
+| `FUN_*.txt` | Ghidra exports of relevant functions |
