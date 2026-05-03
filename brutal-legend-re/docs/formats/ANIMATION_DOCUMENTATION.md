@@ -1,55 +1,52 @@
 # Brutal Legend Ghidra exports — quick reference
 
-This is a **flat reference** of every `FUN_*.txt`, `DAT_*.txt`, and
-`thunk_*.txt` file in this folder. It tells you in one line what each
-function/data is, whether it's live code, and which subsystem it belongs to.
+A flat reference of every `FUN_*.txt`, `DAT_*.txt`, and `thunk_*.txt`
+file in this folder. One line per item, organized by subsystem.
 
 For deep technical analysis see [`ANIMATION_FUN_ANALYSIS.md`](ANIMATION_FUN_ANALYSIS.md).
-For practical usage see [`HANDOFF.md`](HANDOFF.md).
+For practical use see the parser scripts and `dnap_spline_decoder.py`.
 
-**Legend** (status column):
+**Status legend:**
 - ✅ live & relevant to dnap animation
-- 🔧 utility, called from animation code
-- 💀 dead code (Havok SDK boilerplate that never runs)
+- 🔧 utility, used by animation code
+- 💀 dead code (Havok SDK boilerplate, never called by BL at runtime)
 - 📋 schema / class registration (init-time only)
 - ⚙️ unrelated game subsystem (Effect, DUIMovie, Physics, UI, etc.)
 
-**Address range cheat sheet:**
+**Address-range cheat sheet:**
 - `0x00400000–0x00500000` — early game systems, attribute schemas
 - `0x00500000–0x009f0000` — main game logic
 - `0x00a30000–0x00d80000` — game / Havok runtime mix
-- `0x00cad000–0x00cbf000` — RTTI / packfile machinery (mostly dead)
-- `0x00dc0000–0x00de9000` — Havok animation runtime (mostly dead, but has the format spec we need)
+- `0x00cad000–0x00cbf000` — Havok RTTI / packfile machinery (mostly dead)
+- `0x00dc0000–0x00de9000` — Havok animation runtime (mostly dead, but encodes the dnap format)
 - `0x00e1b000–0x00e1c000` — class registration functions
 
 ---
 
-## §1 Decompression core (live or near-live)
+## §1 Decompression core
 
 | FUN | Role | Status |
 |---|---|---|
-| `00a66470_00a66470` | **zlib `inflate()`** state machine — live: handles all gzip/deflate decompression | ✅ |
-| `00a66470_00a66e12` | byte-identical alias of above (Ghidra found two label addresses) | ✅ |
+| `00a66470_00a66470` | **zlib `inflate()`** state machine — handles all gzip/deflate | ✅ |
+| `00a66470_00a66e12` | byte-identical alias of above | ✅ |
 | `00a69d00_00a69d00` | **zlib `inflate_table()`** — Huffman table builder | ✅ |
-| `00dcca40` | `StDecompressD` — Havok delta sampler. Unused by BL (vftable-only ref) | 💀 |
-| `00dccfb0` | `StDecompressDChunk` — chunk variant of above | 💀 |
+| `00dcca40` | `StDecompressD` — Havok delta sampler. Unused by BL | 💀 |
+| `00dccfb0` | `StDecompressDChunk` — chunk variant | 💀 |
 | `00dd51b0` | `StDecompressW` — Wavelet sampler | 💀 |
-| `00dd59a0` | Wavelet vftable[4] — same fate | 💀 |
+| `00dd59a0` | Wavelet vftable[4] | 💀 |
 
 ---
 
 ## §2 Spline-compressed animation format (the dnap format spec)
 
-These functions describe the on-disk format of dnap files. They're all
-"dead" (registered with the class system but never called for sampling
-— BL has its own custom loader inlined elsewhere) but their **bodies
-are correct format documentation**.
+These functions describe the on-disk format. They're "dead" (registered
+but never called) but their **bodies are correct format documentation**.
 
 ### Class registration (init-time only)
 
 | FUN | Role |
 |---|---|
-| `00e1b630` | Registers `hkaDeltaCompressedAnimation` with class system 📋 |
+| `00e1b630` | Registers `hkaDeltaCompressedAnimation` 📋 |
 | `00e1b7f0` | Registers `hkaSplineCompressedAnimation` 📋 |
 | `00e1b750` | Registers `hkaSplineCompressedAnimationTrackCompressionParams` 📋 |
 | `00e1b700` | Registers another animation-param class 📋 |
@@ -61,116 +58,112 @@ are correct format documentation**.
 
 ### Outer ctors (set vtable, dispatch to inner)
 
-| FUN | Class | Inner ctor |
-|---|---|---|
-| `00dc9d10` | `hkaDeltaCompressedAnimation::ctor` | calls `00dcc280` 💀 |
-| `00dca060` (in `00dcca060.txt`) | `hkaSplineCompressedAnimation::ctor` | calls `00dd1a00` 💀 |
-| `00dd2a30` / `00dd2bd0` | Spline ctor (encoder variant, takes raw input data) | calls `00dd1d10` 💀 |
-| `00dca130` (referenced) | `hkaWaveletCompressedAnimation::ctor` | calls `00dd4b00` 💀 |
-
-### Vtable accessors (return vftable addresses)
-
-| FUN | Returns |
+| FUN | Class |
 |---|---|
-| `00dc9cf0` | Destroy wrapper for Delta — calls vmethod[0] 🔧 |
-| `00dc9d40` | vmethod[12] of Delta — forwarder 💀 |
-| `00dc9d60` | vmethod[13] of Delta — same 💀 |
+| `00dc9d10` | `hkaDeltaCompressedAnimation::ctor` → calls `00dcc280` 💀 |
+| `00dca060` (in `00dcca060.txt`) | `hkaSplineCompressedAnimation::ctor` → calls `00dd1a00` 💀 |
+| `00dd2a30` / `00dd2bd0` | Spline encoder ctor → calls `00dd1d10` 💀 |
+
+### Vtable accessors / destroy wrappers
+
+| FUN | Role |
+|---|---|
+| `00dc9cf0` | Destroy wrapper for Delta 🔧 |
+| `00dc9d40` | Delta vmethod[12] forwarder 💀 |
+| `00dc9d60` | Delta vmethod[13] 💀 |
 | `00dc9d90` | small Delta helper 💀 |
-| `00dca080` | returns `hkaSplineCompressedAnimation::vftable` (accessor) 🔧 |
-| `00dca090` | Spline destroy wrapper — calls dtor + frees memory 🔧 |
+| `00dca080` | Returns `hkaSplineCompressedAnimation::vftable` 🔧 |
+| `00dca090` | Spline destroy wrapper 🔧 |
 | `00dc9f30` / `00dc9f40` | Tiny vtable getters 🔧 |
 
 ### Inner ctor / fixup bodies
 
 | FUN | Role | Status |
 |---|---|---|
-| `00dcc280` | Delta byte-swap pass — called by `00dc9d10` when init_flag set 💀 |
-| `00dd4b00` (referenced) | Wavelet byte-swap pass | 💀 |
-| **`00dd1a00`** | **Spline per-block per-track header walker** ✅ — describes dnap layout |
-| `00dd1d10` | Spline encoder body (huge) — used by `00dd2a30` | 💀 |
+| `00dcc280` | Delta byte-swap pass | 💀 |
+| **`00dd1a00`** | **Spline per-block per-track header walker** — defines dnap layout | ✅ |
+| `00dd1d10` | Spline encoder body (huge) | 💀 |
 
 ### Format-defining helpers (the spec for dnap)
 
 | FUN | Role | Status |
 |---|---|---|
-| **`00dd1810`** | Trans/Scale component dispatcher (calls `00dd1530` + `00dd1560`) | ✅ |
-| **`00dd1850`** | Rotation component dispatcher (calls `00dd1530` + `00dd06a0`) | ✅ |
-| **`00dd1530`** | Stream byte size calculator | ✅ |
-| **`00dd1560`** | Trans/Scale per-component layout walker | ✅ |
-| **`00dd06a0`** | Rotation layout walker — uses `DAT_00e71108`/`DAT_00e71120` | ✅ |
-| **`00dd0680`** | Jump table dispatch: `(*PTR_LAB_00f73838[encoding_type])(cursor)` | ✅ |
-| **`00dd14d0`** | Cursor advance + byte-swap helper (1/2/4 byte variants) | ✅ |
-| **`00dd4680`** | Time → (block, local_time, sub_frame) converter | ✅ |
-| `00dd1c60` / `00dd1890` / `00dd1ae0` / `00dd1730` / `00dd1770` / `00dd1610` | Spline encoder helpers (knot writers) | 💀 |
+| **`00dd1810`** | T/S component dispatcher | ✅ |
+| **`00dd1850`** | R component dispatcher | ✅ |
+| **`00dd1530`** | Stream byte-size calculator | ✅ |
+| **`00dd1560`** | T/S per-component layout walker | ✅ |
+| **`00dd06a0`** | R layout walker — uses `DAT_00e71108`/`DAT_00e71120` | ✅ |
+| **`00dd0680`** | Jump table dispatch (calls one of 6 R decoders) | ✅ |
+| **`00dd14d0`** | Cursor advance + byte-swap helper (1/2/4 byte) | ✅ |
+| **`00dd4680`** | Time → (block, local_t, sub_frame) converter | ✅ |
+| `00dd1c60` / `00dd1890` / `00dd1ae0` / `00dd1730` / `00dd1770` / `00dd1610` | Spline encoder helpers | 💀 |
 | `00dd2c70` | Scratch struct dtor | 🔧 |
 | `00dd2f30` | Integer formatter (logging) | 🔧 |
 | `00dd2dd0` / `00dd2de0` / `00dd2df0` | Spline vmethod forwarders | 💀 |
-| `00dd2fe0` / `00dd3830` | Spline sample helpers — calls `00dd4680` | 💀 |
-| `00dd4180` | Helper | 💀 |
-| `00dd4390` / `00dd4500` | Sampler bodies | 💀 |
-| `00dd3ce0` | Spline dtor — frees 5 dynamic arrays | 💀 |
+| `00dd2fe0` / `00dd3830` | Spline sample helpers | 💀 |
+| `00dd4180` / `00dd4390` / `00dd4500` | Sampler bodies | 💀 |
+| `00dd3ce0` | Spline dtor | 💀 |
 
 ### Bitstream decoders (delta path, dead)
 
 | FUN | Role |
 |---|---|
-| `00dcc100` | Delta interp / scratch fill | 💀 |
-| `00dcc730` / `00dcc830` | Sample cache hit/miss | 💀 |
-| `00dcc6e0` / `00dcc1a0` / `00dcc1d0` | Delta vftable methods | 💀 |
-| `00dcbdb0` | Time→frame helper (Delta variant) | 💀 |
-| `00dcbb30` / `00dcbb40` / `00dcbcb0` / `00dcbe90` / `00dcbea0` / `00dcbeb0` | Delta vftable methods | 💀 |
-| `00dcbf10` / `00dcbfc0` / `00dcc060` | Delta vftable methods | 💀 |
-| `00dcca00` | Delta dtor | 💀 |
-| `00dde310` | Prefix-sum (delta-decode) helper | 💀 |
-| `00dde3c0` | Per-component bit-window decoder | 💀 |
-| `00dddf80` | Bits-needed query | 💀 |
-| `00dd6ad0` / `00dd6a30` | Bitstream front-end + per-track mask analyzer | 💀 |
-| `00dd7070` | Mask analyzer (4-counter output) | 💀 |
-| `00dd7b00` | Per-track recompose (the smallest3 W reconstruction) | 💀 |
+| `00dcc100` | Delta interp / scratch fill 💀 |
+| `00dcc730` / `00dcc830` | Sample cache hit/miss 💀 |
+| `00dcc6e0` / `00dcc1a0` / `00dcc1d0` | Delta vftable methods 💀 |
+| `00dcbdb0` | Time→frame helper (Delta) 💀 |
+| `00dcbb30` / `00dcbb40` / `00dcbcb0` / `00dcbe90` / `00dcbea0` / `00dcbeb0` | Delta vftable methods 💀 |
+| `00dcbf10` / `00dcbfc0` / `00dcc060` | Delta vftable methods 💀 |
+| `00dcca00` | Delta dtor 💀 |
+| `00dde310` | Prefix-sum (delta-decode) helper 💀 |
+| `00dde3c0` | Per-component bit-window decoder 💀 |
+| `00dddf80` | Bits-needed query 💀 |
+| `00dd6ad0` / `00dd6a30` | Bitstream front-end + mask analyzer 💀 |
+| `00dd7070` | Mask analyzer 💀 |
+| `00dd7b00` | Per-track recompose 💀 |
 
 ### Wavelet helpers (dead)
 
 | FUN | Role |
 |---|---|
-| `00dd5030` | Wavelet per-track loop | 💀 |
-| `00de5910` | Wavelet inverse transform | 💀 |
-| `00de6470` | Range-coded write (wavelet) | 💀 |
+| `00dd5030` | Wavelet per-track loop 💀 |
+| `00de5910` | Wavelet inverse transform 💀 |
+| `00de6470` | Range-coded write (wavelet) 💀 |
 
-### Rotation encoder bodies (dead — but documented Havok formats)
+### Encoder utility chain
 
 | FUN | Role |
 |---|---|
-| `00dd1530` | Per-encoding-type cursor advance | 🔧 |
-| `00de7e70` / `00de7fd0` | Spline-related helpers | 💀 |
-| `00de8b10` | Same | 💀 |
-| `00de42a0` | Encoder helper | 💀 |
-| `00de17a0` / `00de1a90` / `00de1c30` / `00de1cf0` / `00de0c50` | Encoder utility chain | 💀 |
-| `00de67d0` | Library init helper | 🔧 |
-| `00ddf700` | High-level init | 🔧 |
+| `00de7e70` / `00de7fd0` | Spline-related helpers 💀 |
+| `00de8b10` | Same 💀 |
+| `00de42a0` | Encoder helper 💀 |
+| `00de17a0` / `00de1a90` / `00de1c30` / `00de1cf0` / `00de0c50` | Encoder utility chain 💀 |
+| `00de67d0` | Library init helper 🔧 |
+| `00ddf700` | High-level init 🔧 |
 
 ---
 
-## §3 Format-defining DATA tables (all critical)
+## §3 DATA tables
 
 | DAT | Role |
 |---|---|
-| **`00e71108`** | **Alignment table** for rotation encoding types (6 entries: `[4,1,2,1,2,4]`) ✅ |
-| **`00e71120`** | **Byte-size table** for rotation encoding types (6 entries: `[4,5,6,3,2,16]`) ✅ |
-| `00e74cb0` | `AnimCompressionParams` struct — global compression settings | 📋 |
-| `00e9dd30` | String pool entry: `"AnimFilename:RsRef<AnimResource>"` | 📋 |
-| `01009ae8` | Allocator failure callback function pointer | 🔧 |
+| **`00e71108`** | **Alignment table** for rotation encodings (6 × u32: `[4,1,2,1,2,4]`) ✅ |
+| **`00e71120`** | **Byte-size table** for rotation encodings (6 × u32: `[4,5,6,3,2,16]`) ✅ |
+| `00e74cb0` | `AnimCompressionParams` struct 📋 |
+| `00e9dd30` | String pool: `"AnimFilename:RsRef<AnimResource>"` 📋 |
+| `01009ae8` | Allocator failure callback 🔧 |
 
 ---
 
-## §4 Resource manager (live — handles all asset loading)
+## §4 Resource manager (live)
 
-| FUN | Role | Status |
-|---|---|---|
-| **`00450760`** | `RsMgr::AcquireOrLoad` — generic resource acquire entry. **60+ callers** | ✅ |
-| **`00451000`** | `RsMgr::Lookup` — manager lookup with type/hash | ✅ |
-| `00451330` | Resource init helper — calls vmethod[0x34] for type-specific load | ✅ |
-| `0066a540` | `AnimResourceRsMgr::vftable[14]` — `return 0xFF;` (no-op stub) | ⚙️ |
-| `00d51460` | `AnimResourceRsMgr::vftable[15]/[16]` — empty `return;` (no-op stub) | ⚙️ |
+| FUN | Role |
+|---|---|
+| **`00450760`** | `RsMgr::AcquireOrLoad` — generic resource entry. 60+ callers ✅ |
+| **`00451000`** | `RsMgr::Lookup` — manager lookup ✅ |
+| `00451330` | Resource init helper ✅ |
+| `0066a540` | `AnimResourceRsMgr::vftable[14]` — `return 0xFF;` (no-op) ⚙️ |
+| `00d51460` | `AnimResourceRsMgr::vftable[15]/[16]` — empty `return;` ⚙️ |
 
 ---
 
@@ -178,60 +171,55 @@ are correct format documentation**.
 
 | FUN | Role |
 |---|---|
-| `00a89a00` | `CoSkeleton::operator new` (allocates 0xa0 bytes) ✅ |
+| `00a89a00` | `CoSkeleton::operator new` ✅ |
 | `00a89a50` | CoSkeleton class registration 📋 |
-| `00a89af0` | `CoSkeleton::ctor` (initializes state) ✅ |
+| `00a89af0` | `CoSkeleton::ctor` ✅ |
 | `00a89bf0` | `CoSkeleton::dtor` ✅ |
-| `00a89f50` | `CoSkeleton::lazyInit` — allocates 0x290-byte bone math buffer ✅ |
-| `00a89700` | Registers `kAP_*` animation priority enum (26 entries) 📋 |
-| `00a8a4b0` / `00a8a4f0` | `CoSkeleton::setStateMachine` / `clearStateMachine` ✅ |
-| `00a8a530` | `CoSkeleton::onParentChange` (re-resolves parent transform) ✅ |
-| `00a8a580` | `CoSkeleton::release` (destructs child + frees state) ✅ |
+| `00a89f50` | `CoSkeleton::lazyInit` ✅ |
+| `00a89700` | Registers `kAP_*` priority enum (26 entries) 📋 |
+| `00a8a4b0` / `00a8a4f0` | `CoSkeleton::set/clearStateMachine` ✅ |
+| `00a8a530` | `CoSkeleton::onParentChange` ✅ |
+| `00a8a580` | `CoSkeleton::release` ✅ |
 | `00a8b230` | TaskInstance ctor for CoSkeleton thread task ✅ |
-| `00a8b770` | Thread-task body — bone update tick (called by worker pool) ✅ |
+| `00a8b770` | Thread-task body — bone update tick ✅ |
 
 ---
 
-## §6 Animation track sampling / blending (live runtime, but high-level)
+## §6 Animation track sampling / blending (live runtime)
 
 | FUN | Role |
 |---|---|
-| `0065ad10` | **Animation track sampling driver** — iterates tracks, dispatches | ✅ |
-| `0065b260` | Stance-aware sampling variant | ✅ |
-| `0065ba90` | Per-track applicator — writes transforms onto skeleton | ✅ |
-| `00433130` | SIMD 4-quat normalization loop | ✅ |
-| `00433d80` | Multi-track quat SLERP blend | ✅ |
-| `00436c70` | Bone matrix multiply + weight | ✅ |
-| `0043bba0` | Iterator helper (calls vtable visitors) | ✅ |
-| `00499f70` | Per-bone helper used in sampling | ✅ |
-| `00ade360` | Larger animation-related routine | ✅ |
+| `0065ad10` | Animation track sampling driver ✅ |
+| `0065b260` | Stance-aware sampling variant ✅ |
+| `0065ba90` | Per-track applicator ✅ |
+| `00433130` | SIMD 4-quat normalization ✅ |
+| `00433d80` | Multi-track quat SLERP blend ✅ |
+| `00436c70` | Bone matrix multiply + weight ✅ |
+| `0043bba0` | Iterator helper ✅ |
+| `00499f70` | Per-bone sampling helper ✅ |
+| `00ade360` | Larger animation routine ✅ |
 
 ---
 
-## §7 Schema/property setup (compile-time, defines text formats)
-
-These functions register attributes on game classes — they tell the
-engine "this struct has fields X, Y, Z with types A, B, C". The
-attributes describe `.Stance`, `.ComboPose`, `.ComboAnim`,
-`CcActorPlayAnim`, etc. text-format property files.
+## §7 Schema / property setup (compile-time)
 
 | FUN | What it sets up |
 |---|---|
 | `0040ea40` | `AnimCompressionParams` 📋 |
 | `00541e10` | `AnimEvent_Footstep` 📋 |
-| `005fbac0_005fbac0` | `CcActorPlayAnim` (cutscene play-anim command) — Animation:RsRef<AnimResource>, ShouldLoop, EaseIn/Out, etc. 📋 |
-| `00644490` | Dialogue line attributes — Line, SoundCueName, BodyAnim, BodyAnimJoint 📋 |
-| `00906c30` | Locomotion — MinSpeed, MovementBlendInTime, GroundSpeeds 📋 |
-| `0090b860` | Head/eye/idle config — HeadJoint, EyeBlinkAnim 📋 |
-| `00916350` | **Master Stance schema** — all the *Anims arrays (Forward/Backward/Turn/Stop/Idle/Death/etc.) 📋 |
+| `005fbac0_005fbac0` / `005fbac0` | `CcActorPlayAnim` (cutscene play-anim) 📋 |
+| `00644490` | Dialogue line attributes 📋 |
+| `00906c30` | Locomotion attributes 📋 |
+| `0090b860` | Head/eye/idle config 📋 |
+| `00916350` | **Master Stance schema** 📋 |
 | `0094ac90` | IdleAnimation properties 📋 |
 | `0095cb10` | Mount/attachment properties 📋 |
-| `00a11f30` | Wheel/suspension physics constraints 📋 |
-| `00a38440` | UnitOrder state machine (Attack, Follow, Defend) 📋 |
+| `00a11f30` | Wheel/suspension constraints 📋 |
+| `00a38440` | UnitOrder state machine 📋 |
 | `00a92360` | Leg-IK config 📋 |
 | `004ba320` | Component vftable cache 📋 |
-| `004baaa0` | Component-tree dtor (mirror of above) 📋 |
-| `009e1b40` | `CoRatMount::Idle` registration 📋 |
+| `004baaa0` | Component-tree dtor 📋 |
+| `009e1b40` | `CoRatMount::Idle` 📋 |
 | `00a15c70` | Generic registration 📋 |
 
 ---
@@ -241,12 +229,12 @@ attributes describe `.Stance`, `.ComboPose`, `.ComboAnim`,
 | FUN | Role |
 |---|---|
 | `004411e0` | Attribute lookup by name |
-| `00441360` / `00441400` / `00441480` / `004414e0` | Misc attribute helpers |
+| `00441360` / `00441400` / `00441480` / `004414e0` | Attribute helpers |
 | `00441630` | String hashing |
-| `00441750` / `00441880` / `004418e0` / `00441980` | Misc attribute helpers |
-| `006b40a0` | Generic RTTI message-buffer push helper |
+| `00441750` / `00441880` / `004418e0` / `00441980` | Attribute helpers |
+| `006b40a0` | RTTI message-buffer push |
 | `009186b0` / `009186b8` | Vmethod wrappers |
-| `00918900` | Enum-attribute reader (text format) |
+| `00918900` | Enum-attribute reader |
 | `00918c30` | List-attribute reader |
 | `00918d60` | Reference-attribute reader |
 | `00919710` | Array-iterator helper |
@@ -255,35 +243,28 @@ attributes describe `.Stance`, `.ComboPose`, `.ComboAnim`,
 
 ---
 
-## §9 AnimResource consumers (live, but use already-loaded data)
-
-These functions **look up** an AnimResource via the resource manager
-but don't decode the dnap bytes themselves — they read already-cached
-runtime state.
+## §9 AnimResource consumers (use already-loaded data)
 
 | FUN | Role |
 |---|---|
-| `00764C40` | Property getter (animation reference) |
+| `00764C40` | Property getter (anim ref) |
 | `008488f0` | `PlayAnimAction`-related |
 | `008f6f10` | `PlayAnimAction::computeMinMaxTime` |
 | `008f7560` | Helper |
 | `008fae70` / `008fdf10` | More PlayAnim helpers |
-| `00a9a980` / `00a9a9e0` / `00a9aa90` / `00a9aae0` / `00a9be30` | State queries on loaded animations |
+| `00a9a980` / `00a9a9e0` / `00a9aa90` / `00a9aae0` / `00a9be30` | State queries |
 | `0063ffe0` | Property hook |
-| `0048a4b0` | Top-level boot sequencer (init kAP_* + sub-systems) |
+| `0048a4b0` | Top-level boot sequencer |
 
 ---
 
-## §10 Specific UI / particle / mesh resource handlers (unrelated)
+## §10 Unrelated game subsystems
 
-These are present because we accidentally exported their resource manager
-helpers when chasing the resource manager. They handle other resource types.
-
-| FUN | Resource type | Role |
-|---|---|---|
-| `005c4b00` / `005c4ed0` / `005c5700` | `Effect` | Particle/effect lookups ⚙️ |
-| `00468c80` / `00468b30` / `00470ac0` / `0046a540` | `DUIMovie` | UI movie playback ⚙️ |
-| `00577570` / `00578ef0` | `PhysicsRigidBody` | Physics constraint queries ⚙️ |
+| FUN | Resource type |
+|---|---|
+| `005c4b00` / `005c4ed0` / `005c5700` | `Effect` (particles) ⚙️ |
+| `00468c80` / `00468b30` / `00470ac0` / `0046a540` | `DUIMovie` (UI movies) ⚙️ |
+| `00577570` / `00578ef0` | `PhysicsRigidBody` ⚙️ |
 | `00589030` | Generic ⚙️ |
 | `004f2a10` | Effect helper ⚙️ |
 | `00402950` / `00402e40` | UI/audio init ⚙️ |
@@ -303,52 +284,44 @@ helpers when chasing the resource manager. They handle other resource types.
 | `00c8da60` | TLS pool free |
 | `00c8dae0` | Memory helper |
 | `00c8e490` / `00c8e690` | Memory helpers |
-| `00c8e760` / `00c8e770` | Inherited `hkBaseObject` methods (vtable slots [1]/[2]) |
+| `00c8e760` / `00c8e770` | Inherited `hkBaseObject` methods |
 | `00c8ece0` | Dynamic-array growth |
 | `00c8f330` / `00c8f8d0` | More memory routines |
 | `00c903a0` | Memory helper |
-| `00c98290` / `00c98730` | std::ostream-style formatters (logging) |
+| `00c98290` / `00c98730` | Logging formatters |
 | `00c994a0` / `00c99a50` | Logging helpers |
 | `00fd7d0` | Helper |
 
 ---
 
-## §12 Havok packfile / RTTI infrastructure (mostly dead code)
-
-The 0xcad000–0xcc0000 range contains Havok's **packfile reader/writer**
-and **RTTI infrastructure**. These are dead-code Havok SDK boilerplate
-that ships with BL.exe but isn't called for dnap files (dnap uses a
-custom magic, doesn't go through the standard packfile reader).
+## §12 Havok packfile / RTTI infrastructure (mostly dead)
 
 | FUN address range | Role |
 |---|---|
 | `00cad230` / `00cad470` / `00cad5a0` / `00cad7b0` / `00cadff0` | Havok class machinery 💀 |
-| `00cae1e0` | References `PackfileObjectsCollector::vftable` 💀 |
+| `00cae1e0` | `PackfileObjectsCollector::vftable` ref 💀 |
 | `00cae800` / `00caea00` / `00caeb90` / `00caedf0` / `00caeea0` | Same 💀 |
-| `00caf450` / `00caf710` / `00caf9c0` | `hkPackfileObjectUpdateTracker::vftable` setters 💀 |
-| `00caff10` / `00caff80` | `hkBinaryPackfileWriter::vftable` setters 💀 |
-| `00cb0040` through `00cb6850` (~25 funcs) | Havok serializer / RTTI / streamwriter 💀 |
+| `00caf450` / `00caf710` / `00caf9c0` | `hkPackfileObjectUpdateTracker` 💀 |
+| `00caff10` / `00caff80` | `hkBinaryPackfileWriter` 💀 |
+| `00cb0040` ... `00cb6850` (~25) | Havok serializer / RTTI 💀 |
 | `00cb6ed0` | Packfile object tracker 💀 |
 | `00cb8240` / `00cb84d0` | Havok RTTI 💀 |
 | `00cb9780` | More serializer 💀 |
 | `00cb9ab0` / `00cb9e90` | XML packfile reader 💀 |
-| `00cb9f80` | `hkXmlPackfileReader.cpp` body — large XML parser 💀 |
+| `00cb9f80` | `hkXmlPackfileReader.cpp` body 💀 |
 | `00cbae90` / `00cbc120` / `00cbc250` / `00cbc4c0` / `00cbcc30` / `00cbd5d0` / `00cbd760` | Packfile writer helpers 💀 |
-| `00cc3c70` / `00cc67d0` / `00cc7a00` | More packfile machinery 💀 |
+| `00cc3c70` / `00cc67d0` / `00cc7a00` | Packfile machinery 💀 |
 | `00ccf9a0` | Helper 💀 |
-| `00cd1dc0` / `00cd2240` / `00cd2b10` / `00cd5090` / `00cdc1d0` / `00ce4790` / `00ce9f40` / `00cfb1e0` / `00d33b80` | Havok serialization helpers 💀 |
-| `00d7c830` / `00d7e230` / `00d7fb20` / `00d7fcf0` / `00d800b0` | Havok class init / RTTI 💀 |
+| `00cd1dc0` / `00cd2240` / `00cd2b10` / `00cd5090` / `00cdc1d0` / `00ce4790` / `00ce9f40` / `00cfb1e0` / `00d33b80` | Havok serialization 💀 |
+| `00d7c830` / `00d7e230` / `00d7fb20` / `00d7fcf0` / `00d800b0` | Havok class init 💀 |
 
 ---
 
-## §13 AF range — additional Havok class functions
-
-This 0xaf range contains many small Havok class methods (vtable
-methods, getters, setters). All inherited from Havok library code.
+## §13 0xaf range — additional Havok class methods
 
 | FUN | Notes |
 |---|---|
-| `00af40b0` through `00af50e0` (~18 funcs) | Havok base class vtable methods, mostly small forwarders ⚙️ |
+| `00af40b0` ... `00af50e0` (~18) | Havok base-class vtable methods ⚙️ |
 | `00abec40` / `00ab6ac0` | Havok utility ⚙️ |
 | `00bf4ff0` | Generic helper ⚙️ |
 
@@ -358,44 +331,106 @@ methods, getters, setters). All inherited from Havok library code.
 
 | File | Role |
 |---|---|
-| `thunk_FUN_00cb33b0` | Compiler-generated thunk wrapping `FUN_00cb33b0` (vtable adjustor for multiple inheritance) |
+| `thunk_FUN_00cb33b0` | Compiler vtable adjustor thunk |
 
 ---
 
-## §15 Decompilation/UI/Game data (DAT_ files)
+## §15 NEW: physics keyframes / camera / cutscene system (NOT animation)
 
-| DAT | Role |
+These were exported in a "find keyframe-related code" pass but cover
+**physics body keyframes**, **camera waypoints**, and the
+**Flash/SWF cutscene system** — they DON'T decode dnap animation.
+
+### Physics keyframes (scripted rigid-body motion)
+
+| FUN | Role |
 |---|---|
-| `00e71108` | **Spline rotation alignment table** (6 × u32: `[4,1,2,1,2,4]`) ✅ |
-| `00e71120` | **Spline rotation byte-size table** (6 × u32: `[4,5,6,3,2,16]`) ✅ |
-| `00e74cb0` | `AnimCompressionParams` struct |
-| `00e9dd30` | String: `"AnimFilename:RsRef<AnimResource>"` |
-| `01009ae8` | Function pointer (allocator failure callback) |
+| `00e170d0` | Registers `hkpKeyframedRigidMotion` ⚙️ |
+| `00d76600` | "Keyframed Rigid Bodies" string ⚙️ |
+| `00577fb0` | Registers `Keyframed` motion type ⚙️ |
+| `00e0f1f0` | `SetKeyframed` entity command ⚙️ |
+| `0097df00` | `CoControllerKeyframe` component ⚙️ |
+| `0097d830` | `KeyframedEntityImpeded` event ⚙️ |
+| `0097d730` | `KeyframesCompletedMessage` event ⚙️ |
+| `00e112f0` | `SetKeyframeImpedingEntity` command ⚙️ |
+| `00e11330` | `SetKeyframeSpeedScale` command ⚙️ |
+| `00e11370` | `IsKeyframeEntImpeded` query ⚙️ |
+| `0097e110` | `KeyframeData` attribute ⚙️ |
+| `009653a0` | `UseKeyframes` boolean ⚙️ |
+
+### Camera path / cutscene cameras
+
+| FUN | Role |
+|---|---|
+| `006127e0` | Camera path attributes ⚙️ |
+| `0061cd20` | "Camera Shake" command ⚙️ |
+| `00623890` | "Play Flash Movie" command ⚙️ |
+| `0063a160` | Frame/Clump attributes ⚙️ |
+
+### Flash / SWF cutscene rendering
+
+| FUN | Role |
+|---|---|
+| `00ac3ed0` | SWF frame-rate logger / loader ⚙️ |
+| `00adb860` | SWF action / DoActionLoader ⚙️ |
+| `00aeb7c0` | SWF sprite frame loader ⚙️ |
+| `00af8f70` | SWF helper ⚙️ |
+
+### Havok motion (related but NOT bone keyframes)
+
+| FUN | Role |
+|---|---|
+| `00dca840` | `hkaDefaultAnimatedReferenceFrame.cpp` — root motion 💀 |
+| `00e1bd30` | `hkaKeyFrameHierarchyUtility` registration 💀 |
+| `00e15170` / `00e151b0` | `hkMonitorStreamStringMap` 💀 |
+| `00e15280` | `hkReferencedObject` base 💀 |
+| `00e152b0` / `00e152e0` / `00e15310` / `00e15340` | Havok base class regs 💀 |
+| `00e16050` | `hkxMeshSection` 💀 |
+| `00e179f0` | Havok class reg 💀 |
+| `00e18940` / `00e18950` / `00e18a30` | More Havok regs 💀 |
+| `00e1b570` / `00e1b6c0` / `00e1b7b0` / `00e1bb30` / `00e1bb60` / `00e1bc20` / `00e1bd00` | Animation class regs 📋 |
+
+### Misc unrelated exports
+
+| FUN | Role |
+|---|---|
+| `00a46b00` | "Gib Joint" command ⚙️ |
+| `00bc1f10` | OpenGL extension query ⚙️ |
+| `00df2380` | "LockSimToFramerate" ⚙️ |
+| `00df23c0` | Sim-rate helper ⚙️ |
+| `00df55e0` | "KillCurrentFrame" ⚙️ |
+| `00e039b0` | "ToggleFrameReplacement" ⚙️ |
+| `0040d050` | UI bool/int attributes ⚙️ |
+| `0043f550` | Window flags (-width/-height/-fullscreen) ⚙️ |
+| `005e8960` | Sleep/wait command ⚙️ |
+| `0080e090` | "OpenCollision"/"ClosedCollision" attrs ⚙️ |
+| `0089a190` | Timing system attrs ⚙️ |
+| `006f7270` | Generic helper ⚙️ |
+| `00cda9f0` / `00cd6500` | Helpers ⚙️ |
+| `00a40aa0` | Game system helper ⚙️ |
+| `0096c110` | Boulder physics ⚙️ |
+| `00dc9260` | Havok class init ⚙️ |
 
 ---
 
-## What everyone normally needs to read
+## What you actually need
 
 If you only read 5 things from this folder:
 
-1. **[`HANDOFF.md`](HANDOFF.md)** — practical "what do I do" guide
-2. **[`ANIMATION_FUN_ANALYSIS.md`](ANIMATION_FUN_ANALYSIS.md) §19** — the dnap format spec
-3. **[`b20_horse_anim_parser.py`](b20_horse_anim_parser.py)** — working structural parser
-4. **[`dnap_spline_decoder.py`](dnap_spline_decoder.py)** — quaternion decoders
-5. **[`blender_dnap_animator.py`](blender_dnap_animator.py)** — Blender import script
-
-The format-spec functions in §2 are what `dnap_spline_decoder.py`
-implements in Python. Everything in §1, §10, §12, §13 is either dead
-code or unrelated game subsystems — they're in the export folder
-because we exported them while figuring out which functions WERE
-relevant. They have negative value for finishing the dnap project but
-positive value as a reference for anyone looking at adjacent BL
-subsystems (UI, particles, physics).
+1. **[`ANIMATION_FUN_ANALYSIS.md`](ANIMATION_FUN_ANALYSIS.md)** §19 — the dnap format spec (definitive)
+2. **[`b20_horse_anim_parser.py`](b20_horse_anim_parser.py)** — working structural parser
+3. **[`dnap_spline_decoder.py`](dnap_spline_decoder.py)** — quaternion decoders (6 Havok formats)
+4. **[`dnap_to_bvh.py`](dnap_to_bvh.py)** — BVH export (currently bind-pose only)
+5. **[`blender_dnap_animator.py`](blender_dnap_animator.py)** — Blender-side animator script
 
 ## What's still genuinely missing
 
-Per [HANDOFF.md](HANDOFF.md):
-- B-spline interpolation between control points (documented Havok algorithm)
-- Empirical pin-down of the per-track header base offset across all 27 animations
+Per §19 of the analysis doc:
 
-These are coding tasks, not RE — see `HANDOFF.md` for the path forward.
+1. **Pin down exact base offset** of the per-track header table per
+   animation (empirical — try sweeping all candidate offsets).
+2. **Implement uniform B-spline interpolation** in Python (~50 lines,
+   documented Havok algorithm).
+3. **Wire the decoded values** into `blender_dnap_animator.py`.
+
+These are coding tasks, **not RE**. No more Ghidra exports needed.
